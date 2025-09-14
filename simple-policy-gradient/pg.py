@@ -11,7 +11,7 @@ from helpers import get_categorical_distribution, get_action, compute_loss
 # Following the OpenAI spinning up tutorial
 # https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html
 
-def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_size=5_000, render=False):
+def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_size=5_000, render=False, use_reward_to_go=True):
 	# Create the environment
 	env = gym.make(env_name, render_mode=(None if not render else 'human'))
 	assert isinstance(env.observation_space, Box), "Must have continuous state space"
@@ -68,7 +68,15 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_s
 				batch_lens.append(ep_len)
 
 				# The weight for each logprob(a|s) is R(tau)
-				batch_weights += [ep_ret] * ep_len
+				if use_reward_to_go:
+					cum_reward = 0
+					this_ep_weights = []
+					for i in range(ep_len-1, -1, -1):
+						cum_reward += ep_rews[i]
+						this_ep_weights.insert(0, cum_reward)
+					batch_weights.extend(this_ep_weights)
+				else:
+					batch_weights += [ep_ret] * ep_len
 
 				# Reset episode vars
 				obs, _ = env.reset()
@@ -82,6 +90,8 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_s
 				if len(batch_obs) > batch_size:
 					break
 
+		# import code
+		# code.interact(local=locals())
 		# Take a single policy gradient update step
 		optimizer.zero_grad()
 		batch_loss = compute_loss(
@@ -95,6 +105,7 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_s
 		return batch_loss, batch_rets, batch_lens
 
 	# Training loop!
+	returns = []
 	for i in range(epochs):
 		batch_loss, batch_rets, batch_lens = train_one_epoch()
 		print(
@@ -103,4 +114,6 @@ def train(env_name='CartPole-v0', hidden_sizes=[32], lr=1e-2, epochs=50, batch_s
 			f"{Fore.GREEN}Return: {np.mean(batch_rets):.3f}{Style.RESET_ALL} "
 			f"{Fore.MAGENTA}Ep Len: {np.mean(batch_lens):.3f}{Style.RESET_ALL}"
 		)
+		returns.append(np.mean(batch_rets))
+	print("Returns:", returns)
 
